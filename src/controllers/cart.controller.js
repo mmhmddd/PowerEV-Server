@@ -37,9 +37,10 @@ exports.getCart = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      cart,
+      data: cart,
     });
   } catch (error) {
+    console.error('Get cart error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -55,6 +56,8 @@ exports.addToCart = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { productId, productType, quantity } = req.body;
+
+    console.log('Add to cart request:', { sessionId, productId, productType, quantity });
 
     // Validate input
     if (!productId || !productType) {
@@ -73,6 +76,14 @@ exports.addToCart = async (req, res) => {
       });
     }
 
+    // Validate productId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format',
+      });
+    }
+
     // Get product details
     const ProductModel = getProductModel(productType);
     const product = await ProductModel.findById(productId);
@@ -84,11 +95,14 @@ exports.addToCart = async (req, res) => {
       });
     }
 
+    console.log('Product found:', { name: product.name, price: product.price, stock: product.stock });
+
     // Check stock
-    if (product.stock < (quantity || 1)) {
+    const requestedQuantity = quantity || 1;
+    if (product.stock < requestedQuantity) {
       return res.status(400).json({
         success: false,
-        message: 'Insufficient stock',
+        message: `Insufficient stock. Available: ${product.stock}`,
       });
     }
 
@@ -109,27 +123,45 @@ exports.addToCart = async (req, res) => {
 
     if (existingItemIndex > -1) {
       // Update quantity
-      cart.items[existingItemIndex].quantity += quantity || 1;
+      const newQuantity = cart.items[existingItemIndex].quantity + requestedQuantity;
+      
+      // Check stock for new quantity
+      if (product.stock < newQuantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock. You have ${cart.items[existingItemIndex].quantity} in cart. Available: ${product.stock}`,
+        });
+      }
+      
+      cart.items[existingItemIndex].quantity = newQuantity;
+      console.log('Updated existing item quantity:', newQuantity);
     } else {
       // Add new item
+      const imageUrl = product.images && product.images.length > 0 
+        ? (product.images[0].url || product.images[0]) 
+        : '';
+
       cart.items.push({
         productId,
         productType,
         name: product.name,
-        price: product.price,
-        quantity: quantity || 1,
-        image: product.images && product.images.length > 0 ? product.images[0] : '',
+        price: product.offer?.enabled ? product.finalPrice : product.price,
+        quantity: requestedQuantity,
+        image: imageUrl,
       });
+      console.log('Added new item to cart');
     }
 
     await cart.save();
+    console.log('Cart saved successfully. Total items:', cart.items.length);
 
     res.status(200).json({
       success: true,
       message: 'Item added to cart',
-      cart,
+      data: cart,
     });
   } catch (error) {
+    console.error('Add to cart error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -145,6 +177,8 @@ exports.updateCartItem = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { productId, productType, quantity } = req.body;
+
+    console.log('Update cart item request:', { sessionId, productId, productType, quantity });
 
     if (!productId || !productType || !quantity) {
       return res.status(400).json({
@@ -187,19 +221,22 @@ exports.updateCartItem = async (req, res) => {
     if (product.stock < quantity) {
       return res.status(400).json({
         success: false,
-        message: 'Insufficient stock',
+        message: `Insufficient stock. Available: ${product.stock}`,
       });
     }
 
     cart.items[itemIndex].quantity = quantity;
     await cart.save();
 
+    console.log('Cart item updated successfully');
+
     res.status(200).json({
       success: true,
       message: 'Cart updated',
-      cart,
+      data: cart,
     });
   } catch (error) {
+    console.error('Update cart item error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -214,6 +251,8 @@ exports.updateCartItem = async (req, res) => {
 exports.removeFromCart = async (req, res) => {
   try {
     const { sessionId, productId, productType } = req.params;
+
+    console.log('Remove from cart request:', { sessionId, productId, productType });
 
     const cart = await Cart.findOne({ sessionId });
 
@@ -230,12 +269,15 @@ exports.removeFromCart = async (req, res) => {
 
     await cart.save();
 
+    console.log('Item removed from cart successfully');
+
     res.status(200).json({
       success: true,
       message: 'Item removed from cart',
-      cart,
+      data: cart,
     });
   } catch (error) {
+    console.error('Remove from cart error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -251,6 +293,8 @@ exports.clearCart = async (req, res) => {
   try {
     const { sessionId } = req.params;
 
+    console.log('Clear cart request:', { sessionId });
+
     const cart = await Cart.findOne({ sessionId });
 
     if (!cart) {
@@ -264,12 +308,15 @@ exports.clearCart = async (req, res) => {
     cart.totalAmount = 0;
     await cart.save();
 
+    console.log('Cart cleared successfully');
+
     res.status(200).json({
       success: true,
       message: 'Cart cleared',
-      cart,
+      data: cart,
     });
   } catch (error) {
+    console.error('Clear cart error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

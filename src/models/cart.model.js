@@ -52,11 +52,11 @@ const cartSchema = new mongoose.Schema(
 );
 
 // Calculate total amount before saving
-cartSchema.pre('save', function(next) {
+// Use async function without next() callback for newer Mongoose versions
+cartSchema.pre('save', async function() {
   this.totalAmount = this.items.reduce((total, item) => {
     return total + (item.price * item.quantity);
   }, 0);
-  next();
 });
 
 module.exports = mongoose.model('Cart', cartSchema);
