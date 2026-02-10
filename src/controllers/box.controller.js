@@ -17,6 +17,7 @@ exports.getAllBoxes = async (req, res) => {
       boxes,
     });
   } catch (error) {
+    console.error('Get all boxes error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -44,6 +45,7 @@ exports.getBox = async (req, res) => {
       box,
     });
   } catch (error) {
+    console.error('Get box error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -89,7 +91,14 @@ exports.createBox = async (req, res) => {
     if (description !== undefined) boxData.description = description;
     if (size !== undefined) boxData.size = size;
     if (quantity !== undefined) boxData.quantity = quantity;
-    if (offer !== undefined) boxData.offer = offer;
+    
+    // Handle offer object
+    if (offer !== undefined) {
+      boxData.offer = {
+        enabled: offer.enabled || false,
+        discountPercentage: offer.discountPercentage || 0
+      };
+    }
 
     // Handle image uploads to Cloudinary
     if (images !== undefined && Array.isArray(images) && images.length > 0) {
@@ -97,6 +106,7 @@ exports.createBox = async (req, res) => {
         const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/boxes');
         boxData.images = uploadedImageUrls;
       } catch (uploadError) {
+        console.error('Image upload error:', uploadError);
         return res.status(500).json({
           success: false,
           message: 'Failed to upload images',
@@ -113,6 +123,19 @@ exports.createBox = async (req, res) => {
       box,
     });
   } catch (error) {
+    // Log the full error for debugging
+    console.error('Create box error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -156,13 +179,25 @@ exports.updateBox = async (req, res) => {
     if (size !== undefined) box.size = size;
     if (stock !== undefined) box.stock = stock;
     if (quantity !== undefined) box.quantity = quantity;
-    if (offer !== undefined) box.offer = offer;
+    
+    // Handle offer object
+    if (offer !== undefined) {
+      box.offer = {
+        enabled: offer.enabled || false,
+        discountPercentage: offer.discountPercentage || 0
+      };
+    }
 
     // Handle image updates
     if (images !== undefined && Array.isArray(images)) {
       // Delete old images from Cloudinary if they exist
       if (box.images && box.images.length > 0) {
-        await deleteMultipleImages(box.images);
+        try {
+          await deleteMultipleImages(box.images);
+        } catch (deleteError) {
+          console.error('Error deleting old images:', deleteError);
+          // Continue anyway - don't fail the update
+        }
       }
 
       // Upload new images if provided
@@ -171,6 +206,7 @@ exports.updateBox = async (req, res) => {
           const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/boxes');
           box.images = uploadedImageUrls;
         } catch (uploadError) {
+          console.error('Image upload error:', uploadError);
           return res.status(500).json({
             success: false,
             message: 'Failed to upload images',
@@ -189,6 +225,18 @@ exports.updateBox = async (req, res) => {
       box,
     });
   } catch (error) {
+    console.error('Update box error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: messages,
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -213,7 +261,12 @@ exports.deleteBox = async (req, res) => {
 
     // Delete images from Cloudinary if they exist
     if (box.images && box.images.length > 0) {
-      await deleteMultipleImages(box.images);
+      try {
+        await deleteMultipleImages(box.images);
+      } catch (deleteError) {
+        console.error('Error deleting images:', deleteError);
+        // Continue with deletion anyway
+      }
     }
 
     await Box.findByIdAndDelete(req.params.id);
@@ -223,6 +276,7 @@ exports.deleteBox = async (req, res) => {
       message: 'Box deleted successfully',
     });
   } catch (error) {
+    console.error('Delete box error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

@@ -33,7 +33,6 @@ const orderSchema = new mongoose.Schema(
     orderNumber: {
       type: String,
       unique: true,
-      required: true,
     },
     name: {
       type: String,
@@ -70,6 +69,16 @@ const orderSchema = new mongoose.Schema(
       required: true,
       min: [0, 'Total amount cannot be negative'],
     },
+    paymentMethod: {
+      type: String,
+      enum: ['cash', 'instapay', 'vodafonecash'],
+      default: 'cash',
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending',
+    },
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
@@ -89,14 +98,20 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-// Generate order number before saving
-orderSchema.pre('save', async function(next) {
-  if (!this.orderNumber) {
+// CRITICAL FIX: Pre-save hook with proper async/await syntax
+orderSchema.pre('save', async function() {
+  // Generate order number only for new documents
+  if (this.isNew && !this.orderNumber) {
     const timestamp = Date.now().toString().slice(-8);
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     this.orderNumber = `ORD-${timestamp}-${random}`;
+    console.log('✅ Generated orderNumber:', this.orderNumber);
   }
-  next();
+  
+  // Set default payment method if not provided
+  if (!this.paymentMethod) {
+    this.paymentMethod = 'cash';
+  }
 });
 
 module.exports = mongoose.model('Order', orderSchema);

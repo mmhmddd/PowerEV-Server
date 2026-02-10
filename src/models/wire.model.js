@@ -43,9 +43,16 @@ const wireSchema = new mongoose.Schema(
       default: 0,
     },
     offer: {
-      type: Number,
-      min: [0, 'Offer cannot be negative'],
-      max: [100, 'Offer cannot exceed 100%'],
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      discountPercentage: {
+        type: Number,
+        min: [0, 'Discount percentage cannot be negative'],
+        max: [100, 'Discount percentage cannot exceed 100%'],
+        default: 0,
+      }
     },
     length: {
       type: Number,

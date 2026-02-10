@@ -7,7 +7,7 @@ const cartItemSchema = new mongoose.Schema({
   },
   productType: {
     type: String,
-    required: [true, 'Please provide product type'],
+    required: true,
     enum: ['Charger', 'Cable', 'Station', 'Adapter', 'Box', 'Breaker', 'Plug', 'Wire', 'Other'],
   },
   name: {
@@ -21,11 +21,12 @@ const cartItemSchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    min: [1, 'Quantity must be at least 1'],
+    min: 1,
     default: 1,
   },
   image: {
     type: String,
+    default: '',
   },
 });
 
@@ -33,14 +34,14 @@ const cartSchema = new mongoose.Schema(
   {
     sessionId: {
       type: String,
-      required: [true, 'Session ID is required'],
+      required: true,
       unique: true,
+      index: true,
     },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+    items: {
+      type: [cartItemSchema],
+      default: [],
     },
-    items: [cartItemSchema],
     totalAmount: {
       type: Number,
       default: 0,
@@ -51,12 +52,16 @@ const cartSchema = new mongoose.Schema(
   }
 );
 
-// Calculate total amount before saving
-// Use async function without next() callback for newer Mongoose versions
+// CRITICAL FIX: Pre-save hook with proper async/await syntax
 cartSchema.pre('save', async function() {
-  this.totalAmount = this.items.reduce((total, item) => {
-    return total + (item.price * item.quantity);
-  }, 0);
+  // Calculate total amount before saving
+  if (this.items && this.items.length > 0) {
+    this.totalAmount = this.items.reduce((total, item) => {
+      return total + (item.price * item.quantity);
+    }, 0);
+  } else {
+    this.totalAmount = 0;
+  }
 });
 
 module.exports = mongoose.model('Cart', cartSchema);

@@ -7,9 +7,11 @@ const User = require('./src/models/user.model');
 dotenv.config();
 const app = express();
 
-// Middleware
+// Middleware - INCREASED LIMITS FOR IMAGE UPLOADS
 app.use(cors());
-app.use(express.json());
+// Increased limit to 100mb to handle multiple large base64 images
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true, parameterLimit: 50000 }));
 
 // Connect to MongoDB and create default admin
 const initializeServer = async () => {
@@ -55,6 +57,7 @@ const wireRoutes = require('./src/routes/wire.routes');
 const otherRoutes = require('./src/routes/other.routes');
 const cartRoutes = require('./src/routes/cart.routes');
 const orderRoutes = require('./src/routes/order.routes');
+const galleryRoutes = require('./src/routes/gallery.routes');
 
 // Test route
 app.get('/', (req, res) => {
@@ -75,6 +78,27 @@ app.use('/api/wires', wireRoutes);
 app.use('/api/others', otherRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/gallery', galleryRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err.message);
+  
+  // Handle payload too large error
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'الملفات المرسلة كبيرة جداً. يرجى تقليل حجم الصور أو عددها.',
+      error: 'Payload too large'
+    });
+  }
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'حدث خطأ في الخادم',
+    error: err.message
+  });
+});
 
 // Start server
 const PORT = process.env.PORT || 5000;
