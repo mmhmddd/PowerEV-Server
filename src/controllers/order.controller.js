@@ -1,6 +1,22 @@
 const Order = require('../models/order.model');
 const Cart = require('../models/cart.model');
 
+// Helper function to get product model
+const getProductModel = (productType) => {
+  const models = {
+    Charger: require('../models/charger.model'),
+    Cable: require('../models/cable.model'),
+    Station: require('../models/station.model'),
+    Adapter: require('../models/adapter.model'),
+    Box: require('../models/box.model'),
+    Breaker: require('../models/breaker.model'),
+    Plug: require('../models/plug.model'),
+    Wire: require('../models/wire.model'),
+    Other: require('../models/other.model'),
+  };
+  return models[productType];
+};
+
 // @desc    Create order (from cart or direct)
 // @route   POST /api/orders
 // @access  Public
@@ -126,6 +142,37 @@ exports.createOrder = async (req, res) => {
       });
     }
 
+    // CRITICAL: Verify stock availability before creating order
+    console.log('🔍 Verifying stock availability...');
+    for (const item of orderItems) {
+      const ProductModel = getProductModel(item.productType);
+      
+      if (!ProductModel) {
+        return res.status(400).json({
+          success: false,
+          message: `Unknown product type: ${item.productType}`,
+        });
+      }
+
+      const product = await ProductModel.findById(item.productId);
+      
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: `Product not found: ${item.name}`,
+        });
+      }
+
+      if (product.stock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for ${item.name}. Available: ${product.stock}, Requested: ${item.quantity}`,
+        });
+      }
+
+      console.log(`✅ Stock OK for ${item.name}: ${product.stock} >= ${item.quantity}`);
+    }
+
     // Create order data
     const orderData = {
       name: name.trim(),
@@ -164,6 +211,33 @@ exports.createOrder = async (req, res) => {
     // Create order
     const order = await Order.create(orderData);
     console.log('✅ Order created successfully:', order.orderNumber);
+
+    // CRITICAL FIX: Decrement stock for each ordered item
+    console.log('📦 Decrementing stock for ordered items...');
+    for (const item of orderItems) {
+      try {
+        const ProductModel = getProductModel(item.productType);
+        
+        if (ProductModel) {
+          const product = await ProductModel.findById(item.productId);
+          
+          if (product) {
+            // Decrement stock
+            const previousStock = product.stock;
+            product.stock = Math.max(0, product.stock - item.quantity);
+            await product.save();
+            console.log(`✅ Stock decremented for ${item.name}: ${previousStock} → ${product.stock} (-${item.quantity})`);
+          } else {
+            console.warn(`⚠️ Product not found for stock decrement: ${item.productId}`);
+          }
+        } else {
+          console.warn(`⚠️ Unknown product type: ${item.productType}`);
+        }
+      } catch (stockError) {
+        // Log error but don't fail the order (order is already created)
+        console.error(`❌ Error decrementing stock for ${item.name}:`, stockError.message);
+      }
+    }
 
     // Clear cart if order was created from cart
     if (sessionId && sessionId !== 'undefined' && sessionId !== 'null') {
@@ -440,6 +514,27 @@ exports.deleteOrder = async (req, res) => {
         success: false,
         message: 'Order not found',
       });
+    }
+
+    // Optional: Restore stock when deleting an order
+    console.log('🔄 Restoring stock for deleted order...');
+    for (const item of order.items) {
+      try {
+        const ProductModel = getProductModel(item.productType);
+        
+        if (ProductModel) {
+          const product = await ProductModel.findById(item.productId);
+          
+          if (product) {
+            const previousStock = product.stock;
+            product.stock = product.stock + item.quantity;
+            await product.save();
+            console.log(`✅ Stock restored for ${item.name}: ${previousStock} → ${product.stock} (+${item.quantity})`);
+          }
+        }
+      } catch (stockError) {
+        console.error(`❌ Error restoring stock for ${item.name}:`, stockError.message);
+      }
     }
 
     await Order.findByIdAndDelete(req.params.id);

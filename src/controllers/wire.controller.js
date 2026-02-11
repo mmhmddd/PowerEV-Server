@@ -160,13 +160,21 @@ exports.updateWire = async (req, res) => {
 
     // Handle image updates
     if (images !== undefined && Array.isArray(images)) {
-      // Delete old images from Cloudinary if they exist
-      if (wire.images && wire.images.length > 0) {
-        await deleteMultipleImages(wire.images);
-      }
+      // Check if images are new (base64) or existing URLs
+      const hasNewImages = images.length > 0 && images.some(img => img.startsWith('data:'));
+      
+      if (hasNewImages) {
+        // Delete old images from Cloudinary if they exist
+        if (wire.images && wire.images.length > 0) {
+          try {
+            await deleteMultipleImages(wire.images);
+          } catch (deleteError) {
+            console.error('Error deleting old images:', deleteError);
+            // Continue anyway - don't fail the update
+          }
+        }
 
-      // Upload new images if provided
-      if (images.length > 0) {
+        // Upload new images
         try {
           const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/wires');
           wire.images = uploadedImageUrls;
@@ -177,8 +185,19 @@ exports.updateWire = async (req, res) => {
             error: uploadError.message,
           });
         }
-      } else {
+      } else if (images.length === 0) {
+        // Delete all images if empty array provided
+        if (wire.images && wire.images.length > 0) {
+          try {
+            await deleteMultipleImages(wire.images);
+          } catch (deleteError) {
+            console.error('Error deleting images:', deleteError);
+          }
+        }
         wire.images = [];
+      } else {
+        // Images are existing URLs - keep them as is
+        wire.images = images;
       }
     }
 

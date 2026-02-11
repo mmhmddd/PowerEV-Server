@@ -4,6 +4,18 @@ const {
   deleteMultipleImages,
 } = require('../utils/cloudinary');
 
+// Helper function to check if a string is a base64 image
+const isBase64Image = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  return str.startsWith('data:image/');
+};
+
+// Helper function to check if a string is a Cloudinary URL
+const isCloudinaryUrl = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  return str.includes('cloudinary.com') || str.startsWith('http');
+};
+
 // @desc    Get all chargers
 // @route   GET /api/chargers
 // @access  Public
@@ -102,8 +114,15 @@ exports.createCharger = async (req, res) => {
     // Handle image uploads to Cloudinary
     if (images !== undefined && Array.isArray(images) && images.length > 0) {
       try {
-        const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/chargers');
-        chargerData.images = uploadedImageUrls;
+        // Only upload base64 images
+        const base64Images = images.filter(img => isBase64Image(img));
+        
+        if (base64Images.length > 0) {
+          const uploadedImageUrls = await uploadMultipleImages(base64Images, 'powerev/chargers');
+          chargerData.images = uploadedImageUrls;
+        } else {
+          chargerData.images = [];
+        }
       } catch (uploadError) {
         return res.status(500).json({
           success: false,
@@ -176,16 +195,28 @@ exports.updateCharger = async (req, res) => {
 
     // Handle image updates
     if (images !== undefined && Array.isArray(images)) {
-      // Delete old images from Cloudinary if they exist
-      if (charger.images && charger.images.length > 0) {
-        await deleteMultipleImages(charger.images);
+      // Separate existing URLs from new base64 images
+      const existingUrls = images.filter(img => isCloudinaryUrl(img));
+      const newBase64Images = images.filter(img => isBase64Image(img));
+
+      // Determine which old images to delete
+      const oldImagesToDelete = charger.images.filter(oldImg => !existingUrls.includes(oldImg));
+
+      // Delete old images that are no longer needed
+      if (oldImagesToDelete.length > 0) {
+        try {
+          await deleteMultipleImages(oldImagesToDelete);
+        } catch (deleteError) {
+          console.error('Error deleting old images:', deleteError);
+          // Continue even if deletion fails
+        }
       }
 
       // Upload new images if provided
-      if (images.length > 0) {
+      let uploadedImageUrls = [];
+      if (newBase64Images.length > 0) {
         try {
-          const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/chargers');
-          charger.images = uploadedImageUrls;
+          uploadedImageUrls = await uploadMultipleImages(newBase64Images, 'powerev/chargers');
         } catch (uploadError) {
           return res.status(500).json({
             success: false,
@@ -193,9 +224,10 @@ exports.updateCharger = async (req, res) => {
             error: uploadError.message,
           });
         }
-      } else {
-        charger.images = [];
       }
+
+      // Combine existing URLs with newly uploaded URLs
+      charger.images = [...existingUrls, ...uploadedImageUrls];
     }
 
     await charger.save();
@@ -229,7 +261,12 @@ exports.deleteCharger = async (req, res) => {
 
     // Delete images from Cloudinary if they exist
     if (charger.images && charger.images.length > 0) {
-      await deleteMultipleImages(charger.images);
+      try {
+        await deleteMultipleImages(charger.images);
+      } catch (deleteError) {
+        console.error('Error deleting images:', deleteError);
+        // Continue with deletion even if image deletion fails
+      }
     }
 
     await Charger.findByIdAndDelete(req.params.id);

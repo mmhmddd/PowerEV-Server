@@ -186,15 +186,22 @@ exports.updateCable = async (req, res) => {
     if (offer !== undefined) cable.offer = offer;
     if (description !== undefined) cable.description = description;
 
-    // Handle image updates
+    // Handle image updates - FIXED VERSION
+    // Only process images if explicitly provided in the request
     if (images !== undefined && Array.isArray(images)) {
-      // Delete old images from Cloudinary if they exist
-      if (cable.images && cable.images.length > 0) {
-        await deleteMultipleImages(cable.images);
-      }
-
-      // Upload new images if provided
+      // New images are being uploaded
       if (images.length > 0) {
+        // Delete old images from Cloudinary if they exist
+        if (cable.images && cable.images.length > 0) {
+          try {
+            await deleteMultipleImages(cable.images);
+          } catch (deleteError) {
+            console.error('Error deleting old images:', deleteError);
+            // Continue with upload even if delete fails
+          }
+        }
+
+        // Upload new images
         try {
           const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/cables');
           cable.images = uploadedImageUrls;
@@ -206,9 +213,18 @@ exports.updateCable = async (req, res) => {
           });
         }
       } else {
+        // Empty array means user wants to remove all images
+        if (cable.images && cable.images.length > 0) {
+          try {
+            await deleteMultipleImages(cable.images);
+          } catch (deleteError) {
+            console.error('Error deleting images:', deleteError);
+          }
+        }
         cable.images = [];
       }
     }
+    // If images is undefined, don't modify the existing images
 
     await cable.save();
 
@@ -217,6 +233,7 @@ exports.updateCable = async (req, res) => {
       cable,
     });
   } catch (error) {
+    console.error('Update cable error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -241,7 +258,12 @@ exports.deleteCable = async (req, res) => {
 
     // Delete images from Cloudinary if they exist
     if (cable.images && cable.images.length > 0) {
-      await deleteMultipleImages(cable.images);
+      try {
+        await deleteMultipleImages(cable.images);
+      } catch (deleteError) {
+        console.error('Error deleting images:', deleteError);
+        // Continue with cable deletion even if image deletion fails
+      }
     }
 
     await Cable.findByIdAndDelete(req.params.id);

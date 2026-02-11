@@ -4,6 +4,16 @@ const {
   deleteMultipleImages,
 } = require('../utils/cloudinary');
 
+// Helper function to check if a string is a base64 image
+const isBase64Image = (str) => {
+  return str.startsWith('data:image/');
+};
+
+// Helper function to check if a string is a Cloudinary URL
+const isCloudinaryUrl = (str) => {
+  return str.startsWith('http://') || str.startsWith('https://');
+};
+
 // @desc    Get all breakers
 // @route   GET /api/breakers
 // @access  Public
@@ -168,26 +178,39 @@ exports.updateBreaker = async (req, res) => {
 
     // Handle image updates
     if (images !== undefined && Array.isArray(images)) {
-      // Delete old images from Cloudinary if they exist
-      if (breaker.images && breaker.images.length > 0) {
-        await deleteMultipleImages(breaker.images);
+      // Separate existing URLs from new base64 images
+      const existingUrls = images.filter(img => isCloudinaryUrl(img));
+      const newBase64Images = images.filter(img => isBase64Image(img));
+
+      // Determine which old images to delete
+      const oldImagesToDelete = breaker.images.filter(oldImg => !existingUrls.includes(oldImg));
+
+      // Delete removed images from Cloudinary
+      if (oldImagesToDelete.length > 0) {
+        try {
+          await deleteMultipleImages(oldImagesToDelete);
+        } catch (deleteError) {
+          console.error('Error deleting old images:', deleteError);
+          // Continue even if deletion fails
+        }
       }
 
-      // Upload new images if provided
-      if (images.length > 0) {
+      // Upload new base64 images if provided
+      let newUploadedUrls = [];
+      if (newBase64Images.length > 0) {
         try {
-          const uploadedImageUrls = await uploadMultipleImages(images, 'powerev/breakers');
-          breaker.images = uploadedImageUrls;
+          newUploadedUrls = await uploadMultipleImages(newBase64Images, 'powerev/breakers');
         } catch (uploadError) {
           return res.status(500).json({
             success: false,
-            message: 'Failed to upload images',
+            message: 'Failed to upload new images',
             error: uploadError.message,
           });
         }
-      } else {
-        breaker.images = [];
       }
+
+      // Combine existing URLs with newly uploaded URLs
+      breaker.images = [...existingUrls, ...newUploadedUrls];
     }
 
     await breaker.save();
@@ -197,6 +220,7 @@ exports.updateBreaker = async (req, res) => {
       breaker,
     });
   } catch (error) {
+    console.error('Update breaker error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

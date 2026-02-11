@@ -4,19 +4,24 @@ const stationSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, 'Please provide a station name'],
+      required: [true, 'Please provide station name'],
       trim: true,
     },
     price: {
       type: Number,
-      required: [true, 'Please provide a price'],
+      required: [true, 'Please provide price'],
       min: [0, 'Price cannot be negative'],
     },
-    quantity: {
+    stockStatus: {
       type: String,
-      required: [true, 'Please provide quantity status'],
       enum: ['in stock', 'out of stock'],
       default: 'in stock',
+      required: true,
+    },
+    quantity: {
+      type: Number,
+      default: 0,
+      min: [0, 'Quantity cannot be negative'],
     },
     voltage: {
       type: Number,
@@ -30,11 +35,6 @@ const stationSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    stock: {
-      type: Number,
-      min: [0, 'Stock cannot be negative'],
-      default: 0,
-    },
     offer: {
       enabled: {
         type: Boolean,
@@ -42,8 +42,8 @@ const stationSchema = new mongoose.Schema(
       },
       discountPercentage: {
         type: Number,
-        min: [0, 'Discount percentage cannot be negative'],
-        max: [100, 'Discount percentage cannot exceed 100'],
+        min: [0, 'Discount cannot be negative'],
+        max: [100, 'Discount cannot exceed 100%'],
         default: 0,
       },
     },
@@ -58,42 +58,45 @@ const stationSchema = new mongoose.Schema(
     efficiency: {
       type: Number,
       min: [0, 'Efficiency cannot be negative'],
-      max: [100, 'Efficiency cannot exceed 100'],
+      max: [100, 'Efficiency cannot exceed 100%'],
     },
     description: {
       type: String,
       trim: true,
     },
-    images: {
-      type: [String],
-      default: [],
-      validate: {
-        validator: function(images) {
-          // Validate that all items are valid URLs or base64 strings
-          return images.every(img => {
-            // Check if it's a valid URL or base64 string
-            return typeof img === 'string' && img.length > 0;
-          });
-        },
-        message: 'All images must be valid strings (URLs or base64)'
-      }
-    },
+    images: [
+      {
+        type: String,
+      },
+    ],
   },
   {
     timestamps: true,
   }
 );
 
-// Virtual field for final price after discount
-stationSchema.virtual('finalPrice').get(function () {
-  if (this.offer && this.offer.enabled && this.offer.discountPercentage > 0) {
-    return this.price - (this.price * this.offer.discountPercentage) / 100;
-  }
-  return this.price;
+// Add index for better query performance
+stationSchema.index({ stockStatus: 1 });
+stationSchema.index({ brand: 1 });
+stationSchema.index({ connectorType: 1 });
+
+// Virtual for checking if in stock based on quantity
+stationSchema.virtual('isAvailable').get(function() {
+  return this.stockStatus === 'in stock' && this.quantity > 0;
 });
 
-// Ensure virtuals are included in JSON responses
-stationSchema.set('toJSON', { virtuals: true });
-stationSchema.set('toObject', { virtuals: true });
+// FIXED: Pre-save middleware - removed the middleware entirely since it's commented out
+// If you need auto-update of stockStatus based on quantity, uncomment this:
+/*
+stationSchema.pre('save', function() {
+  // Auto-update stockStatus based on quantity
+  if (this.quantity === 0) {
+    this.stockStatus = 'out of stock';
+  } else if (this.quantity > 0 && this.stockStatus === 'out of stock') {
+    this.stockStatus = 'in stock';
+  }
+  // No need to call next() - it's handled automatically in modern Mongoose
+});
+*/
 
 module.exports = mongoose.model('Station', stationSchema);
